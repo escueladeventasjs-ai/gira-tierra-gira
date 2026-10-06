@@ -710,7 +710,15 @@ function onTap(el, fn) {
    colgado ni sobra ningún fantasma en pantalla.
    ------------------------------------------------------------ */
 const dragsActivos = new Set();
-function registrarDrag(drag) { dragsActivos.add(drag); }
+function registrarDrag(drag) { drag.__actividad = Date.now(); dragsActivos.add(drag); }
+function refrescarDrag(drag) { if (dragsActivos.has(drag)) drag.__actividad = Date.now(); }
+/* Vigía: si lleva 15 s sin ningún movimiento, el arrastre se cierra solo. */
+setInterval(() => {
+  const ahora = Date.now();
+  [...dragsActivos].forEach(d => {
+    if (ahora - (d.__actividad || 0) > 15000) cerrarDrags(null, null, true);
+  });
+}, 3000);
 function cerrarDrags(clientX, clientY, cancelado) {
   if (!dragsActivos.size) { $$('.drag-ghost').forEach(g => g.remove()); return; }
   const pendientes = [...dragsActivos];
@@ -770,6 +778,7 @@ function enableDrag(root, onDrop) {
     });
     el.addEventListener('pointermove', e => {
       if (pid !== e.pointerId) return;
+      refrescarDrag(drag);
       if (!moved && Math.hypot(e.clientX - sx, e.clientY - sy) > 9) moved = true;
       if (moved) moveGhost(e.clientX, e.clientY);
     });
@@ -1369,6 +1378,7 @@ const BIND = {
     });
     earth.addEventListener('pointermove', e => {
       if (!dragging) return;
+      refrescarDrag(dragRot);
       angle = startAngle + (e.clientX - startX) * 1.4;
       apply();
     });
@@ -1479,6 +1489,7 @@ const BIND = {
     });
     stage.addEventListener('pointermove', e => {
       if (!dragging) return;
+      refrescarDrag(dragOrbit);
       angle = angleFromEvent(e);
       layout();
     });
