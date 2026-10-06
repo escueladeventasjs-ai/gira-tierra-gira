@@ -339,7 +339,9 @@ function defaultSave() {
     missions: { m1: false, m2: false, m3: false },
     errors: {},
     stats: { correct: 0, wrong: 0, best: 0 },
-    settings: { sound: true },
+    /* La VOZ (lectura en voz alta) está apagada por defecto: ella la enciende
+       cuando quiera oírla. `sound` son solo los campanitas del juego. */
+    settings: { sound: true, voice: false },
   };
 }
 function loadSave() {
@@ -461,14 +463,9 @@ function speak(text, opts) {
     avisoVoz('🔇 Este navegador no puede hablar en voz alta.');
     return;
   }
-  /* Si ha silenciado la voz y ella pulsa "Escuchar", es que quiere oírla:
-     la encendemos en vez de ignorarla. */
-  if (!save.settings.sound) {
-    save.settings.sound = true;
-    persist();
-    updateHud();
-    toast('🔊 Voz encendida');
-  }
+  /* Voz apagada por defecto: aquí NUNCA se enciende sola. Solo habla si
+     ella ha pulsado el botón 🔊 de la barra superior. */
+  if (!save.settings.voice) return;
   try {
     speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(String(text));
@@ -525,11 +522,13 @@ function narrar(texto, opts) {
   if (el) {
     el.querySelector('.narrator-text').textContent = texto;
     const badge = el.querySelector('.narrator-voz');
+    const vozApagada = !save.settings.voice;
     if (badge) {
       const v = (narratorVoice && /^es/i.test(narratorVoice.lang || '')) ? narratorVoice : null;
       const hayVoces = ('speechSynthesis' in window) && speechSynthesis.getVoices().length > 0;
-      badge.textContent = v ? '🎙️ ' + v.name : '🎙️ voz del sistema';
-      badge.hidden = !hayVoces;
+      badge.textContent = vozApagada ? '🔇 Voz apagada · pulsa 🔊'
+        : (v ? '🎙️ ' + v.name : '🎙️ voz del sistema');
+      badge.hidden = vozApagada ? false : !hayVoces;
     }
     el.hidden = false;
     // fuerza reflow para reiniciar la animación
@@ -540,6 +539,13 @@ function narrar(texto, opts) {
       el.classList.remove('show');
       el.hidden = true;
     }, Math.min(12000, Math.max(4500, texto.length * 65)));
+  }
+  if (!save.settings.voice) {
+    // Pidió oír algo con la voz apagada: le enseñamos el texto y le decimos
+    // exactamente dónde encenderla (sin activársela nosotros).
+    toast('🔇 La voz está apagada: pulsa el botón 🔊 de la barra superior para oírla.');
+    pulsarBotonVoz();
+    return;
   }
   speak(texto, opts);
   /* Si el navegador no tiene voces instaladas, el cartel sigue ahí (a leer,
@@ -652,10 +658,22 @@ function bindNav(root) {
     b.addEventListener('click', () => { sfx.pop(); go(b.dataset.go); });
   });
 }
+function pulsarBotonVoz() {
+  const b = $('#btn-sound');
+  if (!b) return;
+  b.classList.remove('pulsa');
+  void b.offsetWidth;
+  b.classList.add('pulsa');
+  setTimeout(() => b.classList.remove('pulsa'), 2400);
+}
 function updateHud() {
   const done = (save.missions.m1 ? 1 : 0) + (save.missions.m2 ? 1 : 0) + (save.missions.m3 ? 1 : 0);
   hudMissions.textContent = done + ' de 3 misiones completadas';
-  $('#btn-sound').textContent = save.settings.sound ? '🔊' : '🔇';
+  const voz = !!save.settings.voice;
+  const b = $('#btn-sound');
+  b.textContent = voz ? '🔊' : '🔇';
+  b.setAttribute('aria-label', voz ? 'Apagar la voz' : 'Encender la voz');
+  b.title = voz ? 'Voz encendida: toca para apagarla' : 'Voz apagada: toca para oírla';
 }
 function nextMissionScreen() {
   if (!save.missions.m1) return 'm1Start';
@@ -1309,6 +1327,11 @@ const BIND = {
     $('#btn-reset-home').onclick = () => resetAll();
     const vt = $('#btn-voice-test');
     if (vt) vt.onclick = () => {
+      if (!save.settings.voice) {
+        toast('🔇 La voz está apagada: pulsa el botón 🔊 de la barra superior para probarla.');
+        pulsarBotonVoz();
+        return;
+      }
       // Campanita + locución: si suena la campana pero no la voz, el problema
       // está en las voces del dispositivo; si no suena nada, está el volumen.
       sfx.good();
@@ -2169,13 +2192,27 @@ function finishQuiz() {
 makeStars();
 $('#btn-home').onclick = () => { sfx.pop(); go('home'); };
 $('#btn-sound').onclick = () => {
-  save.settings.sound = !save.settings.sound;
+  save.settings.voice = !save.settings.voice;
   persist();
   updateHud();
-  if (!save.settings.sound) stopSpeak(); else sfx.pop();
-  toast(save.settings.sound ? 'Sonido activado 🔊' : 'Sonido silenciado 🔇');
+  if (save.settings.voice) {
+    sfx.pop();
+    speak('¡Perfecto! Ahora te lo leo todo, ' + PERFIL.nombre + '.');
+    toast('🔊 Voz encendida: ya puedes oírla 🔈');
+  } else {
+    stopSpeak();
+    toast('🔇 Voz apagada: puedes leer tú. Los campanitas siguen 🔔');
+  }
 };
 render();
+if (!save.settings.voice && !save.settings.voiceHint) {
+  save.settings.voiceHint = true;
+  persist();
+  setTimeout(() => {
+    toast('🔇 La voz está apagada. Pulsa el botón 🔊 de la barra superior si quieres oírla.');
+    pulsarBotonVoz();
+  }, 1500);
+}
 if (!almacenamientoDisponible) {
   setTimeout(() => toast('⚠️ Este navegador no guarda el progreso. Puedes jugar igual.'), 900);
 }
