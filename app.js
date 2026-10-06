@@ -513,6 +513,13 @@ function stopSpeak() {
 /* Subtítulo del narrador: hace visible lo que se está leyendo, para que el
    botón 🔊 sirva aunque el dispositivo no tenga voces instaladas. */
 let narrT = null;
+function ocultarNarrador() {
+  const el = $('#narrator');
+  if (!el) return;
+  clearTimeout(narrT);
+  el.classList.remove('show');
+  el.hidden = true;
+}
 function narrar(texto, opts) {
   const el = $('#narrator');
   if (el) {
@@ -632,6 +639,8 @@ function go(screen, params) {
 function render() {
   runCleanups();
   cerrarDrags(null, null, true);
+  closeModal();          // una medalla nunca debe quedar tapando la pantalla
+  ocultarNarrador();     // ni el cartel del narrador
   stopSpeak();
   app.innerHTML = SCREENS[state.screen](state.params);
   (BIND[state.screen] || (() => {}))(state.params);
@@ -1129,13 +1138,14 @@ const SCREENS = {
         '<div class="step-head">',
           '<span class="kicker">Misión 2 · Jugar (opcional)</span>',
           '<h2>Memoria Lunar</h2>',
-          '<p class="lead">Encuentra cada nombre con su Luna.</p>',
+          '<p class="lead">Encuentra cada nombre con su Luna: toca dos cartas. Si son la pareja, se quedan abiertas.</p>',
         '</div>',
-        '<div class="mem-stats" id="mem-stats"><span>🎴 Parejas: 0 / 4</span><span>🔄 Movimientos: 0</span></div>',
+        '<div class="mem-stats" id="mem-stats"><span>🎴 Parejas: 0 / 4</span><span>🔄 Movimientos: 0</span><span>👀 Carta elegida: 0 de 2</span></div>',
         '<div class="mem-grid" id="mem-grid"></div>',
         '<div class="demo-controls">',
-          '<button class="btn btn-ghost" id="mem-skip">Saltar</button>',
+          '<button class="btn btn-sun" id="mem-peek">👀 Ver todas</button>',
           '<button class="btn btn-sky btn-small" id="mem-restart">🔄 Reiniciar</button>',
+          '<button class="btn btn-ghost" id="mem-skip">Saltar</button>',
         '</div>',
       '</section>',
     ].join('');
@@ -1636,7 +1646,6 @@ const BIND = {
     function build() {
       game.flipped = [];
       game.matched = 0;
-      game.lock = false;
       game.moves = 0;
       const cards = shuffle(CONTENT.moon.flatMap(m => [
         { id: m.id, type: 'name', label: m.name },
@@ -1650,44 +1659,71 @@ const BIND = {
             '<span class="mem-face mem-front">' + (c.type === 'image' ? moonHTML(c.id, 58) : esc(c.label)) + '</span>' +
           '</span>' +
         '</button>').join('');
-      updateStats();
       $$('.mem-card', grid).forEach(card => card.addEventListener('click', () => flip(card)));
+      updateStats();
     }
     function updateStats() {
-      $('#mem-stats').innerHTML = '<span>🎴 Parejas: ' + game.matched + ' / 4</span><span>🔄 Movimientos: ' + game.moves + '</span>';
+      const abiertas = game.flipped.length;
+      $('#mem-stats').innerHTML =
+        '<span>🎴 Parejas: ' + game.matched + ' / 4</span>' +
+        '<span>🔄 Movimientos: ' + game.moves + '</span>' +
+        '<span>👀 Carta elegida: ' + abiertas + ' de 2</span>';
     }
     function flip(card) {
-      if (game.lock || card.classList.contains('flipped') || card.classList.contains('matched')) return;
+      // Solo se ignoran las dos cartas que ya están dadas la vuelta.
+      // Antes había un "candado" global de casi un segundo en el que TODOS
+      // los clics se perdían: parecía que el juego no respondía.
+      if (card.classList.contains('flipped') || card.classList.contains('matched')) return;
       sfx.flip();
       card.classList.add('flipped');
       game.flipped.push(card);
-      if (game.flipped.length === 2) {
-        game.moves++;
+      if (game.flipped.length < 2) {
         updateStats();
-        const a = game.flipped[0];
-        const b = game.flipped[1];
-        if (a.dataset.id === b.dataset.id && a.dataset.type !== b.dataset.type) {
-          a.classList.add('matched');
-          b.classList.add('matched');
-          game.matched++;
-          game.flipped = [];
-          sfx.pop();
-          updateStats();
-          if (game.matched === 4) setTimeout(() => awardMedal(MEDALS.m2), 700);
-        } else {
-          game.lock = true;
-          setTimeout(() => {
-            a.classList.remove('flipped');
-            b.classList.remove('flipped');
-            game.flipped = [];
-            game.lock = false;
-          }, 950);
-        }
+        return;
+      }
+      game.moves++;
+      const a = game.flipped[0];
+      const b = game.flipped[1];
+      game.flipped = [];            // el tablero vuelve a estar libre al instante
+      updateStats();
+      if (a.dataset.id === b.dataset.id && a.dataset.type !== b.dataset.type) {
+        a.classList.add('matched');
+        b.classList.add('matched');
+        game.matched++;
+        sfx.pop();
+        const fase = CONTENT.moon.find(m => m.id === a.dataset.id);
+        toast('✨ ¡Pareja! ' + (fase ? fase.name : ''));
+        updateStats();
+        if (game.matched === 4) setTimeout(() => awardMedal(MEDALS.m2), 700);
+      } else {
+        sfx.bad();
+        a.classList.add('shake');
+        b.classList.add('shake');
+        setTimeout(() => { a.classList.remove('shake'); b.classList.remove('shake'); }, 500);
+        toast('🔄 No es esa… fíjate bien y sigue buscando');
+        // Se quedan boca arriba un momento para poder memorizarlas.
+        setTimeout(() => {
+          a.classList.remove('flipped');
+          b.classList.remove('flipped');
+        }, 1000);
       }
     }
 
+    let peekT = null;
+    function pararPista() { clearTimeout(peekT); peekT = null; }
+
     build();
-    $('#mem-restart').onclick = () => { sfx.pop(); build(); };
+    $('#mem-restart').onclick = () => { sfx.pop(); pararPista(); build(); };
+    const peek = $('#mem-peek');
+    if (peek) peek.onclick = () => {
+      sfx.pop();
+      const cartas = $$('.mem-card', grid);
+      cartas.forEach(c => c.classList.add('peek'));
+      toast('👀 Míralas bien… se van a cerrar');
+      pararPista();
+      peekT = setTimeout(() => { cartas.forEach(c => c.classList.remove('peek')); peekT = null; }, 1500);
+    };
+    state.cleanups.push(pararPista);
     $('#mem-skip').onclick = () => {
       if (confirm('¿Saltar el juego de memoria? Puedes volver a jugarlo desde la Misión 2.')) awardMedal(MEDALS.m2);
     };

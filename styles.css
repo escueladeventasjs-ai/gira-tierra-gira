@@ -555,7 +555,13 @@ input[type="range"].moon-slider::-moz-range-thumb{
 }
 .mem-card.matched .mem-front{ border-color:var(--good); background:#e7f9ef; }
 .mem-card:not(.flipped):not(.matched):hover .mem-inner{ transform:rotateY(12deg); }
-.mem-stats{ display:flex; gap:18px; justify-content:center; color:#e8dcff; font-weight:800; font-size:18px; }
+.mem-stats{ display:flex; flex-wrap:wrap; gap:8px 18px; justify-content:center; align-items:center;
+  color:#e8dcff; font-weight:800; font-size:18px; text-align:center; }
+.mem-stats span{ white-space:nowrap; }
+/* Pista: mostrar las caras durante un momento */
+.mem-card.peek .mem-inner,
+.mem-card.peek:hover .mem-inner{ transform:rotateY(180deg); }
+.mem-card.peek{ filter:brightness(1.05); }
 
 /* ---------- arrastrar y soltar ---------- */
 .match-game{ display:flex; flex-direction:column; gap:20px; }
@@ -933,6 +939,7 @@ input[type="range"].moon-slider::-moz-range-thumb{
    ============================================================ */
 #narrator{
   position:fixed; z-index:120;
+  pointer-events:none;   /* el cartel nunca debe tapar lo que se pulsa */
   top:74px; left:50%;
   display:flex; align-items:flex-start; gap:12px;
   width:min(92vw, 640px);
