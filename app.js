@@ -631,6 +631,7 @@ function go(screen, params) {
 }
 function render() {
   runCleanups();
+  cerrarDrags(null, null, true);
   stopSpeak();
   app.innerHTML = SCREENS[state.screen](state.params);
   (BIND[state.screen] || (() => {}))(state.params);
@@ -696,57 +697,103 @@ function onTap(el, fn) {
     pid = null;
     if (Math.hypot(e.clientX - sx, e.clientY - sy) < 10) fn(e);
   });
+  el.addEventListener('pointercancel', () => { pid = null; });
 }
+
+/* ------------------------------------------------------------
+   RED DE SEGURIDAD DEL ARRASTRE
+   Si el navegador no entrega el pointerup al elemento que se
+   arrastraba (captura perdida, ventana sin foco, punto de
+   anulación...), la ficha se quedaba "pegada" al cursor y la
+   pantalla dejaba de responder. Registramos los arrastres vivos
+   y un escuchador global los cierra siempre: nada se queda
+   colgado ni sobra ningún fantasma en pantalla.
+   ------------------------------------------------------------ */
+const dragsActivos = new Set();
+function registrarDrag(drag) { dragsActivos.add(drag); }
+function cerrarDrags(clientX, clientY, cancelado) {
+  if (!dragsActivos.size) { $$('.drag-ghost').forEach(g => g.remove()); return; }
+  const pendientes = [...dragsActivos];
+  dragsActivos.clear();
+  pendientes.forEach(d => { try { d.finish(clientX, clientY, cancelado); } catch (e) {} });
+  $$('.drag-ghost').forEach(g => g.remove());
+}
+window.addEventListener('pointerup', e => {
+  const x = e.clientX, y = e.clientY;
+  // Damos un turno al escuchador del propio elemento; si no respondió, cerramos nosotros.
+  setTimeout(() => { if (dragsActivos.size) cerrarDrags(x, y, false); }, 0);
+}, true);
+window.addEventListener('pointercancel', () => { if (dragsActivos.size) cerrarDrags(null, null, true); }, true);
+window.addEventListener('blur', () => { if (dragsActivos.size) cerrarDrags(null, null, true); });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && dragsActivos.size) cerrarDrags(null, null, true);
+});
+
 function enableDrag(root, onDrop) {
   $$('[data-drag]', root).forEach(el => {
-    let pid = null, ghost = null, moved = false, sx = 0, sy = 0;
+    let pid = null, ghost = null, moved = false, sx = 0, sy = 0, gW = 0, gH = 0;
+
+    const drag = {
+      finish(x, y, cancelado, evt) {
+        if (pid === null) return;
+        pid = null;
+        dragsActivos.delete(drag);
+        el.classList.remove('dragging');
+        if (ghost) { ghost.remove(); ghost = null; }
+        if (cancelado || x == null) return;
+        const ev = evt || { clientX: x, clientY: y };
+        if (moved) {
+          const t = document.elementFromPoint(x, y);
+          const zone = t && t.closest ? t.closest('[data-drop]') : null;
+          onDrop(el, zone, ev, false);
+        } else {
+          onDrop(el, null, ev, true);
+        }
+      },
+    };
+
     el.addEventListener('pointerdown', e => {
-      if (el.classList.contains('placed')) return;
+      if (el.classList.contains('placed') || el.disabled) return;
       pid = e.pointerId; sx = e.clientX; sy = e.clientY; moved = false;
       el.classList.add('dragging');
       try { el.setPointerCapture(pid); } catch (err) {}
       ghost = el.cloneNode(true);
       ghost.classList.add('drag-ghost');
-      ghost.style.width = el.offsetWidth + 'px';
+      ghost.removeAttribute('id');
+      gW = el.offsetWidth; gH = el.offsetHeight;   // se mide una sola vez
+      ghost.style.width = gW + 'px';
+      ghost.style.height = gH + 'px';
       document.body.appendChild(ghost);
-      moveGhost(e);
+      moveGhost(e.clientX, e.clientY);
+      registrarDrag(drag);
       e.preventDefault();
     });
     el.addEventListener('pointermove', e => {
       if (pid !== e.pointerId) return;
-      if (Math.hypot(e.clientX - sx, e.clientY - sy) > 9) moved = true;
-      if (moved) moveGhost(e);
+      if (!moved && Math.hypot(e.clientX - sx, e.clientY - sy) > 9) moved = true;
+      if (moved) moveGhost(e.clientX, e.clientY);
     });
-    const finish = e => {
-      if (pid !== e.pointerId) return;
-      pid = null;
-      el.classList.remove('dragging');
-      if (ghost) { ghost.remove(); ghost = null; }
-      if (moved) {
-        const t = document.elementFromPoint(e.clientX, e.clientY);
-        const zone = t && t.closest ? t.closest('[data-drop]') : null;
-        onDrop(el, zone, e, false);
-      } else {
-        onDrop(el, null, e, true);
-      }
-    };
-    el.addEventListener('pointerup', finish);
+    el.addEventListener('pointerup', e => {
+      if (pid === e.pointerId) drag.finish(e.clientX, e.clientY, false, e);
+    });
     el.addEventListener('pointercancel', () => {
-      if (pid === null) return;
-      pid = null;
-      el.classList.remove('dragging');
-      if (ghost) { ghost.remove(); ghost = null; }
+      if (pid !== null) drag.finish(null, null, true);
+    });
+    el.addEventListener('lostpointercapture', () => {
+      // El navegador soltó la captura sin avisar con pointerup: cerramos igual.
+      setTimeout(() => { if (pid !== null) drag.finish(null, null, true); }, 0);
     });
     el.addEventListener('keydown', e => {
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onDrop(el, null, e, true); }
     });
-    function moveGhost(e) {
+    function moveGhost(x, y) {
       if (!ghost) return;
-      ghost.style.left = (e.clientX - ghost.offsetWidth / 2) + 'px';
-      ghost.style.top = (e.clientY - 30) + 'px';
+      // Solo transform: no obliga al navegador a recalcular el diseño en cada movimiento
+      ghost.style.transform = 'translate3d(' + (x - gW / 2) + 'px,' + (y - gH / 2) + 'px,0) rotate(-3deg) scale(1.05)';
     }
   });
 }
+
 function setupMatchGame(container, onAllPlaced, onError) {
   let selectedChip = null;
   const chips = $$('[data-drag]', container);
@@ -784,6 +831,14 @@ function setupMatchGame(container, onAllPlaced, onError) {
     tryPlace(chip, zone);
   });
   zones.forEach(zone => {
+    zone.setAttribute('role', 'button');
+    zone.tabIndex = 0;
+    zone.addEventListener('keydown', e => {
+      if ((e.key === 'Enter' || e.key === ' ') && selectedChip && !selectedChip.classList.contains('placed')) {
+        e.preventDefault();
+        tryPlace(selectedChip, zone);
+      }
+    });
     onTap(zone, () => {
       if (selectedChip && !selectedChip.classList.contains('placed')) tryPlace(selectedChip, zone);
     });
@@ -1293,6 +1348,15 @@ const BIND = {
     $('#rot-auto').onclick = () => { sfx.pop(); if (playing) stop(); else play(); };
 
     let dragging = false, startX = 0, startAngle = 0;
+    const dragRot = {
+      finish(x, y, cancelado) {
+        dragsActivos.delete(dragRot);
+        if (!dragging) return;
+        dragging = false;
+        earth.classList.remove('dragging');
+        if (!cancelado && x != null) { angle = startAngle + (x - startX) * 1.4; apply(); }
+      },
+    };
     earth.addEventListener('pointerdown', e => {
       stop();
       dragging = true;
@@ -1300,6 +1364,7 @@ const BIND = {
       startAngle = angle;
       try { earth.setPointerCapture(e.pointerId); } catch (err) {}
       earth.classList.add('dragging');
+      registrarDrag(dragRot);
       e.preventDefault();
     });
     earth.addEventListener('pointermove', e => {
@@ -1307,9 +1372,11 @@ const BIND = {
       angle = startAngle + (e.clientX - startX) * 1.4;
       apply();
     });
-    const endDrag = () => { dragging = false; earth.classList.remove('dragging'); };
-    earth.addEventListener('pointerup', endDrag);
-    earth.addEventListener('pointercancel', endDrag);
+    earth.addEventListener('pointerup', e => dragRot.finish(e.clientX, e.clientY, false));
+    earth.addEventListener('pointercancel', () => dragRot.finish(null, null, true));
+    earth.addEventListener('lostpointercapture', () => {
+      setTimeout(() => { if (dragging) dragRot.finish(null, null, true); }, 0);
+    });
     earth.addEventListener('keydown', e => {
       if (e.key === 'ArrowRight') { stop(); angle = (angle + 30) % 360; apply(); }
       if (e.key === 'ArrowLeft') { stop(); angle = (angle - 30 + 360) % 360; apply(); }
@@ -1395,10 +1462,17 @@ const BIND = {
       const cy = rect.top + rect.height / 2;
       return (Math.atan2(e.clientY - cy, e.clientX - cx) * 180 / Math.PI + 360) % 360;
     }
+    const dragOrbit = {
+      finish(x, y, cancelado) {
+        dragsActivos.delete(dragOrbit);
+        dragging = false;
+      },
+    };
     stage.addEventListener('pointerdown', e => {
       stop();
       dragging = true;
       try { stage.setPointerCapture(e.pointerId); } catch (err) {}
+      registrarDrag(dragOrbit);
       angle = angleFromEvent(e);
       layout();
       e.preventDefault();
@@ -1408,9 +1482,11 @@ const BIND = {
       angle = angleFromEvent(e);
       layout();
     });
-    const endDrag = () => { dragging = false; };
-    stage.addEventListener('pointerup', endDrag);
-    stage.addEventListener('pointercancel', endDrag);
+    stage.addEventListener('pointerup', () => dragOrbit.finish(null, null, false));
+    stage.addEventListener('pointercancel', () => dragOrbit.finish(null, null, true));
+    stage.addEventListener('lostpointercapture', () => {
+      setTimeout(() => { if (dragging) dragOrbit.finish(null, null, true); }, 0);
+    });
 
     layout();
     const onResize = () => layout();
@@ -1737,6 +1813,14 @@ const BIND = {
         if (zone && zone.classList.contains('build-slot')) tryPlace(chip, zone);
       });
       slots.forEach(slot => {
+        slot.setAttribute('role', 'button');
+        slot.tabIndex = 0;
+        slot.addEventListener('keydown', e => {
+          if ((e.key === 'Enter' || e.key === ' ') && selectedChip && !selectedChip.classList.contains('placed')) {
+            e.preventDefault();
+            tryPlace(selectedChip, slot);
+          }
+        });
         onTap(slot, () => {
           if (selectedChip && !selectedChip.classList.contains('placed')) tryPlace(selectedChip, slot);
         });

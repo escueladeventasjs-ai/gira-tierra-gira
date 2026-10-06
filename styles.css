@@ -561,6 +561,7 @@ input[type="range"].moon-slider::-moz-range-thumb{
 .match-game{ display:flex; flex-direction:column; gap:20px; }
 .match-targets{ display:grid; gap:14px; grid-template-columns:1fr 1fr; }
 .match-target{
+  touch-action:none;
   min-height:120px; border:3px dashed #b9a8e8; border-radius:22px;
   background:rgba(255,255,255,.10);
   display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px;
@@ -584,8 +585,9 @@ input[type="range"].moon-slider::-moz-range-thumb{
 .chip.correct{ background:linear-gradient(135deg,#2aa864,#15803d); color:#fff; border-color:#0f5c2c; }
 .chip.dragging{ opacity:.35; }
 .drag-ghost{
-  position:fixed; z-index:200; pointer-events:none; opacity:.92;
+  position:fixed; left:0; top:0; z-index:200; pointer-events:none; opacity:.92;
   transform:rotate(-3deg) scale(1.05); box-shadow:0 14px 30px rgba(0,0,0,.4);
+  will-change:transform; -webkit-user-select:none; user-select:none;
 }
 .shake{ animation:shake .4s ease; }
 @keyframes shake{ 0%,100%{ transform:translateX(0);} 25%{ transform:translateX(-7px);} 75%{ transform:translateX(7px);} }
@@ -640,6 +642,7 @@ input[type="range"].moon-slider::-moz-range-thumb{
 /* ---------- construir el año ---------- */
 .build-slots{ display:grid; gap:12px; grid-template-columns:repeat(2,1fr); }
 .build-slot{
+  touch-action:none;
   min-height:110px; border:3px dashed #b9a8e8; border-radius:20px;
   background:rgba(255,255,255,.10); padding:10px;
   display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px;
