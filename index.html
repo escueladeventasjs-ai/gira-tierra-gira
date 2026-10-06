@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>🌍 Gira, Tierra, gira · Entrenador interactivo</title>
+<meta name="description" content="Miniaventura interactiva para preparar el examen de Sociales: movimientos de la Tierra, fases de la Luna y estaciones." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌍</text></svg>" />
+</head>
+<body>
+<div id="stars" aria-hidden="true"></div>
+<header id="hud">
+  <button id="btn-home" class="hud-btn" aria-label="Volver al inicio">🏠</button>
+  <div id="hud-missions" aria-live="polite">0 de 3 misiones completadas</div>
+  <button id="btn-sound" class="hud-btn" aria-label="Activar o silenciar sonidos">🔊</button>
+</header>
+<div id="narrator" role="status" aria-live="polite" hidden>
+  <span class="narrator-icon" aria-hidden="true">🔊</span>
+  <span class="narrator-col">
+    <span class="narrator-text"></span>
+    <span class="narrator-voz" hidden></span>
+  </span>
+</div>
+<main id="app"></main>
+<div id="modal-root"></div>
+<div id="toast" role="status" aria-live="polite"></div>
+<script src="app.js"></script>
+</body>
+</html>
